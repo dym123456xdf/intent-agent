@@ -1,0 +1,124 @@
+{
+  "version": "1.0.0",
+  "description": "订单系统在线客服意图分类定义（8大类 + 子意图）。",
+  "intents": [
+    {
+      "code": "ORDER_QUERY",
+      "name": "订单查询",
+      "description": "用户希望查询订单的状态、详情、物流单号、收货情况等",
+      "examples": [
+        "我的订单到哪了",
+        "帮我查一下订单123456",
+        "这个订单什么时候发货",
+        "订单状态是什么",
+        "物流信息帮我看一下"
+      ],
+      "required_slots": ["order_id"],
+      "next_node": "order_query_handler"
+    },
+    {
+      "code": "REFUND_AFTER_SALE",
+      "name": "退款售后",
+      "description": "用户希望申请退款、退货、换货、查看退款进度或取消订单",
+      "examples": [
+        "我要申请退款",
+        "怎么退货",
+        "我的退款什么时候到账",
+        "取消这个订单",
+        "商品有问题想换货"
+      ],
+      "required_slots": ["order_id"],
+      "next_node": "refund_handler"
+    },
+    {
+      "code": "PAYMENT_ISSUE",
+      "name": "支付问题",
+      "description": "用户遇到支付失败、支付方式选择、发票申请、支付到账等支付相关问题",
+      "examples": [
+        "支付失败怎么办",
+        "可以开发票吗",
+        "怎么用花呗支付",
+        "我已经付款了为什么订单还是未支付",
+        "支付方式有哪些"
+      ],
+      "required_slots": [],
+      "next_node": "payment_handler"
+    },
+    {
+      "code": "LOGISTICS_DELIVERY",
+      "name": "物流配送",
+      "description": "用户咨询发货时间、快递公司、收货地址修改、签收问题等",
+      "examples": [
+        "什么时候能发货",
+        "可以修改收货地址吗",
+        "快递送到哪里了",
+        "我不在家怎么签收",
+        "用什么快递"
+      ],
+      "required_slots": ["order_id"],
+      "next_node": "logistics_handler"
+    },
+    {
+      "code": "ACCOUNT_MEMBER",
+      "name": "账户会员",
+      "description": "用户咨询账号登录、注册、会员等级、积分、余额、个人信息修改等",
+      "examples": [
+        "怎么修改密码",
+        "我的会员等级是什么",
+        "积分怎么用",
+        "账户余额怎么查",
+        "怎么改手机号"
+      ],
+      "required_slots": [],
+      "next_node": "account_handler"
+    },
+    {
+      "code": "PROMOTION_COUPON",
+      "name": "优惠活动",
+      "description": "用户咨询优惠券、促销活动、折扣、满减规则等",
+      "examples": [
+        "有什么优惠券",
+        "满300减50怎么用",
+        "双十一活动什么时候开始",
+        "新用户有什么优惠",
+        "我的优惠券怎么用不了"
+      ],
+      "required_slots": [],
+      "next_node": "promotion_handler"
+    },
+    {
+      "code": "COMPLAINT_SUGGESTION",
+      "name": "投诉建议",
+      "description": "用户表达不满、投诉、表扬或提出产品改进建议",
+      "examples": [
+        "你们的服务态度太差了",
+        "我要投诉",
+        "建议增加一个功能",
+        "客服态度很好表扬一下",
+        "商品质量有问题我要投诉"
+      ],
+      "required_slots": [],
+      "next_node": "complaint_handler"
+    },
+    {
+      "code": "CHITCHAT_GREETING",
+      "name": "闲聊寒暄",
+      "description": "用户打招呼、闲聊或提出与订单业务无关的问题",
+      "examples": [
+        "你好",
+        "在吗",
+        "你是机器人吗",
+        "今天天气怎么样",
+        "谢谢"
+      ],
+      "required_slots": [],
+      "next_node": "chitchat_handler"
+    }
+  ],
+  "fallback": {
+    "code": "FALLBACK_UNKNOWN",
+    "name": "未识别",
+    "description": "无法识别用户意图时使用",
+    "next_node": "fallback_handler"
+  }
+}
