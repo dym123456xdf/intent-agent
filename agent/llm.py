@@ -8,7 +8,6 @@ LLM 客户端工厂：ChatOpenAI 兼容 MiniMax / DeepSeek / 通义 / OpenAI。
 - MiniMax / DeepSeek 都声明 OpenAI 兼容（base_url 一换就能用）
 - 一份代码 = 多家模型，方便切换 provider
 """
-from __future__ import annotations
 
 from functools import lru_cache
 

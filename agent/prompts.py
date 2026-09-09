@@ -13,7 +13,6 @@ agent.prompts
    自定义 RobustPydanticOutputParser 先剥离 reasoning 块再解析 JSON，
    避免 OutputParserException
 """
-from __future__ import annotations
 
 import json
 import re

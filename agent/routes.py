@@ -8,7 +8,6 @@ agent.routes
 后续如果要加"基于意图 + 上下文的复杂路由"（比如退款超 24h 才走人工），
 可以扩展这个模块。
 """
-from __future__ import annotations
 
 from agent.state import AgentState
 

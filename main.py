@@ -18,7 +18,6 @@ main.py
     MINIMAX_BASE_URL （可选，默认 https://api.minimaxi.com/v1）
     MINIMAX_MODEL    （可选，默认 MiniMax-M3）
 """
-from __future__ import annotations
 
 import argparse
 import asyncio

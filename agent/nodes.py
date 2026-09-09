@@ -10,7 +10,6 @@ LangGraph 自动把返回的 dict 合并到 state（按 reducer 规则）。
 - classify_intent: 调用 LLM 做意图分类，写入 current_intent / confidence / slots ...
 - intent_router: 纯逻辑路由（不调 LLM），根据 confidence + intent 决定 routed_node
 """
-from __future__ import annotations
 
 import logging
 

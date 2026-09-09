@@ -32,7 +32,6 @@ LangGraph StateGraph 编排 — Plan-and-Execute 模式的第一步（意图识�
 - route_after_router 从 state 读 routed_node → 直接返回（已经是目标节点名）
 - path_map 的 key == value（解耦不强求，但这里简洁）
 """
-from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 

@@ -8,7 +8,6 @@ agent.models
   里是一等公民，可以直接 .parse() + 注入到 prompt 做 format_instructions
 - TypedDict 是 LangGraph state 用的；这里要做 LLM 结构化输出校验，要用 Pydantic
 """
-from __future__ import annotations
 
 from typing import Literal
 

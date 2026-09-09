@@ -1,18 +1,22 @@
 """
 agent.config
 ============
-集中管理 LLM / 模型 / 阈值等配置。所有配置走环境变量 + 默认值。
+集中管理 LLM / 模型 / 阈值等配置。所有配置从 .env 读 + 环境变量兜底。
 
-为什么不用 .env 直读？
-- 项目目录没有 .env，直接用环境变量更轻量
-- 环境变量在 ~/.zshrc 已经 export 过 MINIMAX_API_KEY / MINIMAX_BASE_URL
-- 测试时方便临时覆盖：MINIMAX_MODEL=MiniMax-M2-highspeed pytest
+为什么走 .env 而不是直接 os.getenv？
+- 项目根目录已有 .env，单一来源管理更可控
 """
 import os
 from pathlib import Path
 
+from dotenv import load_dotenv
+
 # 项目根目录: ~/PycharmProjects/intent-agent/
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# 加载 .env（override=False：保留进程已有 env var 的优先级）
+_DOTENV_PATH = PROJECT_ROOT / ".env"
+load_dotenv(dotenv_path=_DOTENV_PATH, override=False)
 
 # —— LLM 配置 ——
 # 兼容 OpenAI 协议：MiniMax / DeepSeek / 通义千问 / OpenAI 都走 ChatOpenAI

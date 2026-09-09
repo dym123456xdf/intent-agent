@@ -19,7 +19,6 @@ HARD RULE（来自 langgraph-state-and-reducers skill）：
 - routed_node: 经 confidence 校验 + 路由函数后，下一步要去的目标节点名
 - fallback_reason: 触发 fallback 的原因（None / "low_confidence" / "unknown_intent"）
 """
-from __future__ import annotations
 
 from typing import Annotated, TypedDict
 

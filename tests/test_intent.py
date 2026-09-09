@@ -8,7 +8,6 @@ tests/test_intent.py
 2. intent_router 纯逻辑 — 离线（不需要 LLM）
 3. classify_intent 端到端 — 调真实 LLM，需要 MINIMAX_API_KEY（用 marker 区分）
 """
-from __future__ import annotations
 
 import asyncio
 import os
