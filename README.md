@@ -55,7 +55,7 @@ LLM 调用异常 / schema 校验失败 / 超时 → 自动回退到 `FALLBACK_UN
 | 维度 | 选型 | 理由 |
 |---|---|---|
 | **编排框架** | LangGraph 1.2.11 StateGraph | 状态机模式适合多意图 + 路由 + 降级链路 |
-| **LLM** | MiniMax-M3（兼容 OpenAI 协议） | 公司主用 MiniMax 模型族；OpenAI 协议可平替 DeepSeek / 通义 / OpenAI |
+| **LLM** | AGNES（`agnes-2.5-flash`，兼容 OpenAI 协议） | 通过 ChatOpenAI + base_url 接入 AGNES AI（`apihub.agnes-ai.com/v1`）；同一套代码可平替 DeepSeek / 通义 / OpenAI |
 | **结构化输出** | Pydantic v2 + PydanticOutputParser | 强类型 + schema 校验，LLM 输出幻觉可被拦截 |
 | **Python** | 3.13.15 | conda env `/opt/anaconda3/envs/langgraph/bin/python` |
 | **测试** | pytest 9.x + pytest-asyncio | 离线（路由逻辑）+ E2E（真 LLM 调用）双层覆盖 |
@@ -75,7 +75,7 @@ intent-agent/
 │   ├── models.py                 # Pydantic schema（IntentClassification 等）
 │   ├── state.py                  # LangGraph AgentState TypedDict
 │   ├── prompts.py                # 意图分类 prompt + JSON 约束
-│   ├── llm.py                    # ChatOpenAI MiniMax 客户端工厂
+│   ├── llm.py                    # ChatOpenAI AGNES 客户端工厂
 │   ├── session.py                # 网页版多轮 session 存储(进程内)
 │   ├── nodes.py                  # classify_intent / intent_router 节点
 │   ├── workflow.py               # StateGraph 编排
@@ -123,9 +123,9 @@ intent_router         ← 纯逻辑路由（置信度门控 + 追问优先级 + 
 ### 2. 配置环境变量（已写入 ~/.zshrc）
 
 ```bash
-export MINIMAX_API_KEY="sk-cp-..."
-export MINIMAX_BASE_URL="https://api.minimaxi.com/v1"
-export MINIMAX_MODEL="MiniMax-M3"  # 可选，默认就是这个
+export AGNES_API_KEY="sk-..."
+export AGNES_BASE_URL="https://apihub.agnes-ai.com/v1"
+export AGNES_MODEL="agnes-2.5-flash"  # 可选，默认就是这个
 ```
 
 ### 3. CLI 用法
@@ -200,7 +200,7 @@ python main.py --query "我要退款" --stream
 
 ### 为什么置信度阈值默认 0.6？
 
-- 实测 MiniMax-M3 在典型 query 上 confidence ≥ 0.85
+- 实测 AGNES (`agnes-2.5-flash`) 在典型 query 上 confidence ≥ 0.85
 - 0.6 是"宁可多走 fallback 也别乱路由"的保守阈值
 - 业务上线后可按真实 query 分布调优（参考 `INTENT_CONFIDENCE_THRESHOLD` env var）
 
