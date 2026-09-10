@@ -3,8 +3,11 @@ agent.config
 ============
 集中管理 LLM / 模型 / 阈值等配置。所有配置从 .env 读 + 环境变量兜底。
 
-为什么走 .env 而不是直接 os.getenv？
+为什么走 .env 而不是直接 os.getenv?
 - 项目根目录已有 .env，单一来源管理更可控
+
+Provider: AGNES AI（apihub.agnes-ai.com / OpenAI 兼容协议）。
+通过 ChatOpenAI 接入 — 改 base_url + api_key + model 三件套即可。
 """
 import os
 from pathlib import Path
@@ -19,10 +22,12 @@ _DOTENV_PATH = PROJECT_ROOT / ".env"
 load_dotenv(dotenv_path=_DOTENV_PATH, override=False)
 
 # —— LLM 配置 ——
-# 兼容 OpenAI 协议：MiniMax / DeepSeek / 通义千问 / OpenAI 都走 ChatOpenAI
-LLM_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
-LLM_API_KEY = os.getenv("MINIMAX_API_KEY", "")
-LLM_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M3")
+# 兼容 OpenAI 协议:AGNES 走 ChatOpenAI 接入
+LLM_BASE_URL = os.getenv("AGNES_BASE_URL", "https://apihub.agnes-ai.com/v1")
+LLM_API_KEY = os.getenv("AGNES_API_KEY", "")
+# agnes-2.5-flash:免费 + Agent 优化 + 中文强 + 支持 function_calling/工具调用
+# (最适合意图分类场景,2026-06 起无限期免费)
+LLM_MODEL = os.getenv("AGNES_MODEL", "agnes-2.5-flash")
 LLM_TEMPERATURE = float(os.getenv("LLM_TEMPERATURE", "0.0"))  # 意图分类要稳定 → 0
 LLM_TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))  # 秒
 

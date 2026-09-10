@@ -9,15 +9,18 @@ LangGraph 自动把返回的 dict 合并到 state（按 reducer 规则）。
 节点清单（本版本只做意图识别，下游 handler 留 hook）:
 - classify_intent: 调用 LLM 做意图分类，写入 current_intent / confidence / slots ...
 - intent_router: 纯逻辑路由（不调 LLM），根据 confidence + intent 决定 routed_node
+
+v2 改动:升级到 with_structured_output(Schema)。
+- chain = prompt | structured_llm（不再 pipe parser）
+- ainvoke() 直接返回 IntentClassification 实例，不再需要 RobustPydanticOutputParser 剥 think 块
+- provider 在生成时按 schema 约束（function_calling / json_schema）
 """
 
 import logging
 
-from langchain_core.messages import HumanMessage
-
 from agent.config import INTENT_CONFIDENCE_THRESHOLD
-from agent.llm import get_llm
-from agent.prompts import get_intent_classify_prompt, get_output_parser
+from agent.llm import get_structured_llm
+from agent.prompts import get_intent_classify_prompt
 from agent.state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -34,14 +37,10 @@ async def classify_intent(state: AgentState) -> dict:
     输出: dict → 合并到 AgentState，包含 current_intent / confidence / reasoning /
          extracted_slots / needs_clarification / clarification_question
 
-    为什么是 async？
-    - LangGraph 节点函数可以 sync 也可以 async，async 在生产环境更省线程
-    - ChatPromptTemplate | ChatOpenAI | PydanticOutputParser 都支持 .ainvoke()
-
-    实现要点：
+    实现要点:
     1. 从 state["messages"] 拿对话历史（add_messages reducer 已经合并好）
-    2. chain = prompt | llm | parser 一行链式调用
-    3. 用 .ainvoke() 异步调用
+    2. chain = prompt | structured_llm 一行链式调用
+    3. 用 .ainvoke() 异步调用 → 直接拿 IntentClassification 实例
     4. 把 Pydantic 对象转成 dict，匹配 AgentState schema
     5. LLM 解析失败时不要直接 raise — 写一个 FALLBACK_UNKNOWN 意图进 state，
        路由节点会再处理（这是生产级鲁棒性）
@@ -52,8 +51,10 @@ async def classify_intent(state: AgentState) -> dict:
         logger.warning("classify_intent 收到空 messages，跳过 LLM 调用")
         return _fallback_result(reason="empty_messages")
 
-    # chain: prompt | llm | pydantic_parser
-    chain = get_intent_classify_prompt() | get_llm() | get_output_parser()
+    # chain: prompt | structured_llm（新写法）
+    # structured_llm 已通过 ChatOpenAI.with_structured_output(IntentClassification) 绑死 schema，
+    # ainvoke() 直接返回 IntentClassification 实例，不需要 parser
+    chain = get_intent_classify_prompt() | get_structured_llm()
 
     try:
         # 注入 messages 占位符（LangGraph 的 ChatPromptTemplate 占位机制）

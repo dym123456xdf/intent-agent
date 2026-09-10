@@ -6,13 +6,12 @@ tests/test_intent.py
 测试层次（不依赖真实 LLM — 用 monkeypatch 替换）:
 1. schema 加载 / Pydantic 校验 — 离线
 2. intent_router 纯逻辑 — 离线（不需要 LLM）
-3. classify_intent 端到端 — 调真实 LLM，需要 MINIMAX_API_KEY（用 marker 区分）
+3. classify_intent 端到端 — 调真实 LLM，需要 AGNES_API_KEY（用 marker 区分）
 """
 
 import asyncio
 import os
 from typing import Any
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -192,8 +191,8 @@ class TestIntentRouter:
 # ============================================================
 
 @pytest.mark.skipif(
-    not os.getenv("MINIMAX_API_KEY"),
-    reason="需要 MINIMAX_API_KEY 才能跑端到端测试",
+    not os.getenv("AGNES_API_KEY"),
+    reason="需要 AGNES_API_KEY 才能跑端到端测试",
 )
 class TestClassifyIntentE2E:
     """调真实 LLM 做意图分类（每条用例都要花 1~2s）"""
@@ -292,37 +291,25 @@ class TestClassifyIntentFallback:
     @pytest.mark.asyncio
     async def test_llm_error_returns_fallback(self, monkeypatch):
         """模拟 LLM 抛异常，应该走 fallback 路径"""
-        # mock chain.ainvoke 抛异常
-        async def boom(*_args, **_kwargs):
+        # 替换 get_structured_llm — mock 成 ainvoke 抛异常的 Runnable
+        from agent import nodes
+        from langchain_core.runnables import RunnableLambda
+
+        # RunnableLambda 把普通函数包装成 Runnable,这样 `prompt | fake` 才能跑通
+        async def boom(_input):
             raise RuntimeError("mock LLM failure")
 
-        # 替换 get_llm 和 get_intent_classify_prompt — 直接 mock chain
-        from agent import nodes
         monkeypatch.setattr(
-            nodes, "get_llm",
-            lambda: AsyncMock(),
+            nodes, "get_structured_llm",
+            lambda: RunnableLambda(boom),
         )
-        monkeypatch.setattr(
-            nodes, "get_intent_classify_prompt",
-            lambda: AsyncMock(),
-        )
-        # 用一个真正返回 mock 的 chain 对象
-        class FakeChain:
-            async def ainvoke(self, _):
-                raise RuntimeError("mock LLM failure")
 
-        async def fake_classify(state):
-            try:
-                chain = FakeChain()
-                await chain.ainvoke({})
-            except Exception as e:
-                return nodes._fallback_result(reason=f"llm_error: {type(e).__name__}")
-
+        # 直接调真实 classify_intent（chain 已经被 mock 替换）
         from langchain_core.messages import HumanMessage
         state: AgentState = {
             "messages": [HumanMessage(content="测试")],
         }
-        result = await fake_classify(state)
+        result = await classify_intent(state)
         assert result["current_intent"] == "FALLBACK_UNKNOWN"
         assert result["fallback_reason"].startswith("llm_error")
 

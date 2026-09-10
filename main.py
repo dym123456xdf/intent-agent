@@ -14,9 +14,9 @@ main.py
     python main.py --query "我要退款" --stream
 
 环境变量:
-    MINIMAX_API_KEY  （必需，~/.zshrc 已 export）
-    MINIMAX_BASE_URL （可选，默认 https://api.minimaxi.com/v1）
-    MINIMAX_MODEL    （可选，默认 MiniMax-M3）
+    AGNES_API_KEY     （必需，.env 已写入）
+    AGNES_BASE_URL    （可选，默认 https://apihub.agnes-ai.com/v1）
+    AGNES_MODEL       （可选，默认 agnes-2.5-flash）
 """
 
 import argparse
@@ -104,7 +104,7 @@ async def interactive_loop() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="订单客服意图识别 — LangGraph StateGraph (MiniMax LLM)"
+        description="订单客服意图识别 — LangGraph StateGraph (AGNES LLM)"
     )
     parser.add_argument(
         "--query", "-q",
