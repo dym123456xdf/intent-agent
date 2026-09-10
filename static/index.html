@@ -1,0 +1,601 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>订单客服 · 意图识别 Demo</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #161922;
+    --panel-2: #1d2230;
+    --border: #2a3142;
+    --text: #e6e9ef;
+    --text-dim: #9aa3b2;
+    --accent: #7c9eff;
+    --accent-2: #5fd0a5;
+    --warn: #ffb84a;
+    --err: #ff7a7a;
+    --user-bubble: #2a3a5e;
+    --agent-bubble: #1d2230;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.6 -apple-system, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    display: grid;
+    grid-template-columns: 260px 1fr 320px;
+    height: 100vh;
+  }
+  /* 左侧: session 列表 */
+  aside {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  aside header {
+    padding: 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  aside header h1 { font-size: 14px; margin: 0; color: var(--text); }
+  button.new-btn {
+    background: var(--accent);
+    color: #0b0d12;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  button.new-btn:hover { filter: brightness(1.1); }
+  ul.session-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+  }
+  ul.session-list li {
+    padding: 10px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    margin-bottom: 4px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+  ul.session-list li:hover { background: var(--panel-2); }
+  ul.session-list li.active { background: var(--panel-2); border: 1px solid var(--accent); }
+  ul.session-list .title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+  }
+  ul.session-list .count { font-size: 11px; color: var(--text-dim); }
+  ul.session-list li .del {
+    visibility: hidden;
+    color: var(--err);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  ul.session-list li:hover .del { visibility: visible; }
+  ul.session-list li .del:hover { background: rgba(255,122,122,0.15); }
+
+  /* 中间: 对话流 */
+  main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  main header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  main header .sid { color: var(--text-dim); font-family: ui-monospace, monospace; font-size: 12px; }
+  .messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .msg {
+    max-width: 78%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user {
+    align-self: flex-end;
+    background: var(--user-bubble);
+    border: 1px solid #3a4d7a;
+  }
+  .msg.assistant {
+    align-self: flex-start;
+    background: var(--agent-bubble);
+    border: 1px solid var(--border);
+  }
+  .msg .role {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    letter-spacing: 0.5px;
+  }
+  .msg .text { font-size: 14px; }
+  .msg.assistant.placeholder {
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .typing {
+    color: var(--text-dim);
+    font-style: italic;
+    padding: 0 20px 8px;
+    font-size: 12px;
+    min-height: 18px;
+  }
+  form.input-bar {
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    padding: 12px 16px;
+    display: flex;
+    gap: 8px;
+  }
+  form.input-bar input {
+    flex: 1;
+    background: var(--panel-2);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    border-radius: 8px;
+    font: inherit;
+    outline: none;
+  }
+  form.input-bar input:focus { border-color: var(--accent); }
+  form.input-bar button {
+    background: var(--accent);
+    color: #0b0d12;
+    border: none;
+    padding: 0 18px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  form.input-bar button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* 右侧: 最近一次分类详情 */
+  section.detail {
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 16px;
+    overflow-y: auto;
+    font-size: 13px;
+  }
+  section.detail h2 {
+    font-size: 13px;
+    margin: 0 0 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+  .kv { margin-bottom: 12px; }
+  .kv .k { color: var(--text-dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .kv .v { font-size: 14px; margin-top: 2px; word-break: break-all; }
+  .intent-badge {
+    display: inline-block;
+    background: var(--accent-2);
+    color: #0b0d12;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 600;
+    font-size: 12px;
+  }
+  .slot-list { margin: 0; padding-left: 16px; }
+  .slot-list li { margin-bottom: 4px; font-family: ui-monospace, monospace; font-size: 12px; }
+  .confidence-bar {
+    background: var(--panel-2);
+    border-radius: 4px;
+    height: 8px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .confidence-bar > div {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-2), var(--accent));
+    transition: width 0.3s;
+  }
+  .warn { color: var(--warn); }
+  .err  { color: var(--err); }
+  .empty { color: var(--text-dim); font-style: italic; }
+  .trace-list {
+    max-height: 200px;
+    overflow-y: auto;
+    background: var(--panel-2);
+    border-radius: 6px;
+    padding: 8px;
+    font-family: ui-monospace, monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+  .trace-list .node-line { padding: 2px 0; }
+  .trace-list .node-line b { color: var(--accent); }
+</style>
+</head>
+<body>
+  <aside>
+    <header>
+      <h1>会话列表</h1>
+      <button class="new-btn" id="new-btn">+ 新会话</button>
+    </header>
+    <ul class="session-list" id="session-list"></ul>
+  </aside>
+
+  <main>
+    <header>
+      <strong>订单客服 · 意图识别</strong>
+      <span class="sid" id="current-sid">未选择会话</span>
+    </header>
+    <div class="messages" id="messages"></div>
+    <div class="typing" id="typing"></div>
+    <form class="input-bar" id="input-form">
+      <input id="user-input" placeholder="输入用户问句,Enter 发送 (Shift+Enter 换行)" autocomplete="off" />
+      <button type="submit" id="send-btn">发送</button>
+    </form>
+  </main>
+
+  <section class="detail">
+    <h2>最近一次分类</h2>
+    <div id="detail-panel"><div class="empty">发送一条消息后,这里会显示意图 / 置信度 / 槽位 / 路由 / 追问。</div></div>
+
+    <h2 style="margin-top:24px">节点 trace</h2>
+    <div class="trace-list" id="trace-panel"><div class="empty">暂无</div></div>
+  </section>
+
+<script>
+"use strict";
+
+// ---------- 工具 ----------
+const $ = (s) => document.querySelector(s);
+const $$ = (s) => Array.from(document.querySelectorAll(s));
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+}
+function jsonPretty(v) {
+  try { return JSON.stringify(v, null, 2); } catch { return String(v); }
+}
+
+// ---------- 状态 ----------
+const state = {
+  currentSid: null,
+  // sessionId -> { messages: [{role, text}], streaming: bool }
+  sessions: new Map(),
+};
+
+// ---------- API ----------
+async function apiCreateSession() {
+  const r = await fetch("/api/sessions", { method: "POST" });
+  return (await r.json()).session_id;
+}
+async function apiListSessions() {
+  const r = await fetch("/api/sessions");
+  return (await r.json()).sessions;
+}
+async function apiReset(sid) {
+  await fetch("/api/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sid }),
+  });
+}
+function apiChat(sid, message) {
+  // 返回 EventSource,失败时由 onerror 处理
+  const url = `/api/chat?` + new URLSearchParams({ session_id: sid, message });
+  // SSE 不能用 POST 直接被 EventSource 消费 — 用 fetch + ReadableStream
+  return fetch("/api/chat", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ session_id: sid, message }),
+  });
+}
+
+// ---------- 渲染:session 列表 ----------
+function renderSessionList(sessions) {
+  const ul = $("#session-list");
+  ul.innerHTML = "";
+  for (const s of sessions) {
+    const li = document.createElement("li");
+    li.dataset.sid = s.session_id;
+    if (s.session_id === state.currentSid) li.classList.add("active");
+    li.innerHTML = `
+      <span class="title" title="${esc(s.session_id)}">${esc(s.title || s.session_id)}</span>
+      <span class="count">${s.message_count || 0}</span>
+      <button class="del" title="删除会话">✕</button>
+    `;
+    li.addEventListener("click", (e) => {
+      if (e.target.classList.contains("del")) return;
+      selectSession(s.session_id);
+    });
+    li.querySelector(".del").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("删除这个会话?")) return;
+      await apiReset(s.session_id);
+      if (state.currentSid === s.session_id) {
+        state.currentSid = null;
+        $("#current-sid").textContent = "未选择会话";
+        $("#messages").innerHTML = "";
+        $("#detail-panel").innerHTML = `<div class="empty">发送一条消息后,这里会显示意图 / 置信度 / 槽位 / 路由 / 追问。</div>`;
+        $("#trace-panel").innerHTML = `<div class="empty">暂无</div>`;
+      }
+      await refreshSessionList();
+    });
+    ul.appendChild(li);
+  }
+}
+
+async function refreshSessionList() {
+  const sessions = await apiListSessions();
+  renderSessionList(sessions);
+}
+
+// ---------- 渲染:消息区 ----------
+function renderMessages() {
+  const box = $("#messages");
+  box.innerHTML = "";
+  const s = state.sessions.get(state.currentSid);
+  if (!s || s.messages.length === 0) {
+    box.innerHTML = `<div class="msg assistant placeholder">开始输入,体验意图识别多轮对话。</div>`;
+    return;
+  }
+  for (const m of s.messages) {
+    const div = document.createElement("div");
+    div.className = "msg " + m.role;
+    div.innerHTML = `<div class="role">${m.role === "user" ? "👤 用户" : "🤖 意图识别"}</div><div class="text">${esc(m.text)}</div>`;
+    box.appendChild(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function appendMessage(role, text) {
+  const s = state.sessions.get(state.currentSid);
+  if (!s) return;
+  s.messages.push({ role, text });
+  renderMessages();
+}
+
+// ---------- 渲染:右侧详情 ----------
+function renderDetail(result) {
+  const panel = $("#detail-panel");
+  if (!result) {
+    panel.innerHTML = `<div class="empty">发送一条消息后,这里会显示意图 / 置信度 / 槽位 / 路由 / 追问。</div>`;
+    return;
+  }
+  const conf = Math.round((result.intent_confidence || 0) * 100);
+  const slots = result.extracted_slots || {};
+  const slotEntries = Object.entries(slots);
+  const fallback = result.fallback_reason;
+  const clarification = result.needs_clarification ? result.clarification_question : null;
+
+  panel.innerHTML = `
+    <div class="kv">
+      <div class="k">意图</div>
+      <div class="v"><span class="intent-badge">${esc(result.current_intent || "N/A")}</span></div>
+    </div>
+    <div class="kv">
+      <div class="k">置信度 (${conf}%)</div>
+      <div class="confidence-bar"><div style="width:${conf}%"></div></div>
+    </div>
+    <div class="kv">
+      <div class="k">分类理由</div>
+      <div class="v">${esc(result.intent_reasoning || "—")}</div>
+    </div>
+    <div class="kv">
+      <div class="k">路由到</div>
+      <div class="v"><code>${esc(result.routed_node || "—")}</code></div>
+    </div>
+    ${slotEntries.length ? `
+      <div class="kv">
+        <div class="k">抽取槽位</div>
+        <ul class="slot-list">${slotEntries.map(([k,v]) => `<li>${esc(k)} = ${esc(v)}</li>`).join("")}</ul>
+      </div>
+    ` : ""}
+    ${clarification ? `
+      <div class="kv warn">
+        <div class="k">需要追问</div>
+        <div class="v">${esc(clarification)}</div>
+      </div>
+    ` : ""}
+    ${fallback ? `
+      <div class="kv err">
+        <div class="k">Fallback 原因</div>
+        <div class="v">${esc(fallback)}</div>
+      </div>
+    ` : ""}
+  `;
+}
+
+function renderTrace(nodes) {
+  const panel = $("#trace-panel");
+  if (!nodes || nodes.length === 0) {
+    panel.innerHTML = `<div class="empty">暂无</div>`;
+    return;
+  }
+  panel.innerHTML = nodes.map(n =>
+    `<div class="node-line"><b>${esc(n.node)}</b> · ${esc(JSON.stringify(n.preview).slice(0,140))}</div>`
+  ).join("");
+  panel.scrollTop = panel.scrollHeight;
+}
+
+// ---------- 会话切换 ----------
+async function selectSession(sid) {
+  state.currentSid = sid;
+  $("#current-sid").textContent = sid;
+  // 切换 session 时,如果本地没有缓存,后端 messages 我们不直接拉(节省一次端点)——
+  // 若用户想看历史,得另开 GET /api/sessions/{id}/messages。本 demo 暂不实现。
+  if (!state.sessions.has(sid)) {
+    state.sessions.set(sid, { messages: [], streaming: false });
+  }
+  renderMessages();
+  // 渲染当前 session 的 last_result
+  const all = await apiListSessions();
+  const meta = all.find(s => s.session_id === sid);
+  renderDetail(meta?.last_result || null);
+  await refreshSessionList();
+}
+
+// ---------- 发送消息 ----------
+async function sendMessage(text) {
+  if (!state.currentSid) {
+    const sid = await apiCreateSession();
+    await selectSession(sid);
+  }
+  const sid = state.currentSid;
+  appendMessage("user", text);
+
+  const s = state.sessions.get(sid);
+  s.streaming = true;
+  $("#send-btn").disabled = true;
+  $("#typing").textContent = "正在识别…";
+
+  const traceNodes = [];
+  renderTrace(traceNodes);
+
+  try {
+    const resp = await apiChat(sid, text);
+    if (!resp.ok || !resp.body) {
+      const err = await resp.text().catch(() => "");
+      appendMessage("assistant", `❌ 请求失败 (${resp.status}): ${err || resp.statusText}`);
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastResult = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      // SSE 事件以 \n\n 分隔
+      const events = buffer.split("\n\n");
+      buffer = events.pop() || "";
+
+      for (const ev of events) {
+        if (!ev.trim()) continue;
+        const lines = ev.split("\n");
+        let eventName = "message";
+        let dataLine = "";
+        for (const line of lines) {
+          if (line.startsWith("event: ")) eventName = line.slice(7).trim();
+          else if (line.startsWith("data: ")) dataLine += line.slice(6);
+        }
+        if (!dataLine) continue;
+        let payload;
+        try { payload = JSON.parse(dataLine); } catch { payload = dataLine; }
+
+        if (eventName === "node") {
+          traceNodes.push(payload);
+          renderTrace(traceNodes);
+        } else if (eventName === "result") {
+          lastResult = payload;
+          renderDetail(payload);
+          const text = formatResultAsText(payload);
+          appendMessage("assistant", text);
+          $("#typing").textContent = "";
+        } else if (eventName === "error") {
+          appendMessage("assistant", `❌ ${payload.message || "未知错误"}`);
+        }
+      }
+    }
+
+    if (lastResult) {
+      // 更新 session 计数等 UI
+      await refreshSessionList();
+    }
+  } catch (e) {
+    appendMessage("assistant", `❌ 网络异常: ${e.message}`);
+  } finally {
+    s.streaming = false;
+    $("#send-btn").disabled = false;
+    $("#typing").textContent = "";
+    $("#user-input").focus();
+  }
+}
+
+function formatResultAsText(r) {
+  const conf = Math.round((r.intent_confidence || 0) * 100);
+  let s = `🎯 ${r.current_intent} (置信度 ${conf}%)\n`;
+  s += `💭 ${r.intent_reasoning || ""}\n`;
+  const slots = Object.entries(r.extracted_slots || {});
+  if (slots.length) {
+    s += `🔑 ${slots.map(([k,v]) => `${k}=${v}`).join(", ")}\n`;
+  }
+  if (r.needs_clarification) {
+    s += `❓ ${r.clarification_question}\n`;
+  }
+  if (r.fallback_reason) {
+    s += `⚠️ fallback: ${r.fallback_reason}\n`;
+  }
+  s += `🚏 → ${r.routed_node}`;
+  return s;
+}
+
+// ---------- 绑定事件 ----------
+$("#new-btn").addEventListener("click", async () => {
+  const sid = await apiCreateSession();
+  await selectSession(sid);
+  await refreshSessionList();
+});
+
+$("#input-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const inp = $("#user-input");
+  const text = inp.value.trim();
+  if (!text) return;
+  const s = state.currentSid ? state.sessions.get(state.currentSid) : null;
+  if (s?.streaming) return;
+  inp.value = "";
+  sendMessage(text);
+});
+
+$("#user-input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    $("#input-form").dispatchEvent(new Event("submit"));
+  }
+});
+
+// ---------- 启动 ----------
+(async () => {
+  await refreshSessionList();
+  const sessions = await apiListSessions();
+  if (sessions.length === 0) {
+    const sid = await apiCreateSession();
+    await selectSession(sid);
+    await refreshSessionList();
+  } else {
+    await selectSession(sessions[0].session_id);
+  }
+  $("#user-input").focus();
+})();
+</script>
+</body>
+</html>

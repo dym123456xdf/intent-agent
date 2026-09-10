@@ -65,6 +65,9 @@ LLM 调用异常 / schema 校验失败 / 超时 → 自动回退到 `FALLBACK_UN
 ```
 intent-agent/
 ├── main.py                       # CLI 入口（单轮 / 交互 / 流式）
+├── web_app.py                    # 网页版入口（FastAPI + SSE,多轮）
+├── static/
+│   └── index.html                # 网页版聊天 UI(单文件)
 ├── README.md                     # 本文档
 ├── agent/
 │   ├── __init__.py
@@ -73,6 +76,7 @@ intent-agent/
 │   ├── state.py                  # LangGraph AgentState TypedDict
 │   ├── prompts.py                # 意图分类 prompt + JSON 约束
 │   ├── llm.py                    # ChatOpenAI MiniMax 客户端工厂
+│   ├── session.py                # 网页版多轮 session 存储(进程内)
 │   ├── nodes.py                  # classify_intent / intent_router 节点
 │   ├── workflow.py               # StateGraph 编排
 │   └── routes.py                 # 进阶路由函数（预留）
@@ -137,6 +141,31 @@ python main.py --interactive
 python main.py --query "我要退款" --stream
 ```
 
+### 3.5 网页版（多轮对话 Demo）
+
+`web_app.py` 给仓库加了个浏览器入口，FastAPI + SSE，单文件 HTML，无前端构建链。
+
+```bash
+# 1. 装 web 依赖（只需一次，conda env 已用 langgraph）
+/opt/anaconda3/envs/langgraph/bin/pip install fastapi uvicorn sse-starlette
+
+# 2. 启动服务（默认 127.0.0.1:8000）
+/opt/anaconda3/envs/langgraph/bin/python web_app.py
+# 或者：
+/opt/anaconda3/envs/langgraph/bin/python -m uvicorn web_app:app --host 127.0.0.1 --port 8000
+
+# 3. 浏览器打开 http://127.0.0.1:8000
+```
+
+接口：
+- `GET  /` — 聊天 UI
+- `POST /api/sessions` — 新建会话，返回 `session_id`
+- `GET  /api/sessions` — 列出会话（侧边栏）
+- `POST /api/chat`   — 多轮对话（SSE 流式，body: `{session_id, message}`）
+- `POST /api/reset`  — 删除指定 session
+
+多轮怎么实现的：`SessionStore`（`agent/session.py`）按 `session_id` 累加 `langchain Messages`，每次 `POST /api/chat` 把完整 history 喂给 `create_agent`。
+
 ### 4. 跑测试
 
 ```bash
@@ -175,14 +204,27 @@ python main.py --query "我要退款" --stream
 - 0.6 是"宁可多走 fallback 也别乱路由"的保守阈值
 - 业务上线后可按真实 query 分布调优（参考 `INTENT_CONFIDENCE_THRESHOLD` env var）
 
+## 实际运行效果
+
+下面这张截图来自网页版 Demo（`web_app.py`），三句话覆盖了核心三条链路：订单查询 → 物流追问 → 闲聊寒暄。右侧边栏实时展示最近一次的意图、置信度、分类理由、路由目标，以及完整的 LangGraph 节点 trace。
+
+![实际运行效果](static/img.png)
+
+图中关键信息：
+
+- 第一轮「帮我查一下订单123456的详情」 → ORDER_QUERY（置信度 96%），正确抽取 `order_id=123456`，路由到 `order_query_handler`
+- 第二轮「它发货了吗?」 → LOGISTICS_DELIVERY（置信度 92%），多轮上下文自动把 `order_id=123456` 关联上，路由到 `logistics_handler`
+- 第三轮「谢谢」 → CHITCHAT_GREETING（置信度 98%），路由到 `chitchat_handler`
+- 节点 trace 展示完整的 `model → tools → model` 三步调用，`structured_response` 里的 `intent / confidence / reasoning` 一目了然
+
 ## 已验证的关键场景
 
 | 场景 | 用户输入 | 识别结果 | 路由 |
 |---|---|---|---|
-| 订单详情 | 「帮我查一下订单123456的详情」 | ORDER_QUERY (95%+) | order_query_handler |
-| 物流追踪 | 「我的订单123456到哪了」 | LOGISTICS_DELIVERY (95%+) | logistics_handler |
+| 订单详情 | 「帮我查一下订单123456的详情」 | ORDER_QUERY (96%) | order_query_handler |
+| 物流追问 | 「它发货了吗?」（承接上轮 order_id） | LOGISTICS_DELIVERY (92%) | logistics_handler |
 | 退款申请 | 「我要申请退款，订单号是888999」 | REFUND_AFTER_SALE (98%+) | refund_handler |
-| 闲聊 | 「你好」 | CHITCHAT_GREETING (98%+) | chitchat_handler |
+| 闲聊 | 「谢谢」 | CHITCHAT_GREETING (98%) | chitchat_handler |
 | 信息缺失 | 「我的订单到哪了」 | LOGISTICS_DELIVERY + needs_clarification | clarification_handler |
 | LLM 异常 | （mock 异常） | FALLBACK_UNKNOWN | fallback_handler |
 
