@@ -217,6 +217,63 @@ python main.py --query "我要退款" --stream
 - 第三轮「谢谢」 → CHITCHAT_GREETING（置信度 98%），路由到 `chitchat_handler`
 - 节点 trace 展示完整的 `model → tools → model` 三步调用，`structured_response` 里的 `intent / confidence / reasoning` 一目了然
 
+## LangSmith 可观测性
+
+> LangSmith 接入是开箱即用的 —— `langchain` SDK 在 import 时自动读取 `.env` 里的 `LANGSMITH_*` 4 个环境变量，把每一次 LangGraph 调用都上报到 LangSmith Cloud，业务代码一行不用改。下面两张图是真实运行时的 trace。
+
+### Trace 1 ——「帮我查一下订单123456的详情」（第一轮 · 订单查询）
+
+![LangSmith trace 第一轮](static/langsmith_1.png)
+
+**整体耗时 8.20s**，左侧 trace tree 把整条调用链展开成三层：
+
+| 步骤 | 节点 | 耗时 | Token | 模型 | 作用 |
+|---|---|---|---|---|---|
+| 1 | `model` | **6.19s** | 4.62K | ChatOpenAI `agnes-2.5-flash` | classify_intent 节点调 LLM 做意图分类 |
+| 2 | `tools` | 0.00s | — | `logistics_handler` | intent_router 派发时被 invoke 但被路由跳过（实际命中 order_query_handler） |
+| 3 | `model` | **2.01s** | 4.75K | ChatOpenAI `agnes-2.5-flash` | handler 内部再次调 LLM 整理回复 |
+
+右侧 Input / Output 面板把整次调用的所有关键字段全部展开：
+
+- **User input**：`帮我查一下订单123456的详情`
+- **AI tool call**：`order_query_handler`，`order_id = 123456` —— **槽位抽取正确**
+- **Tool output**：`已路由到 order_query_handler (order_id=123456)` —— 路由决策落地
+- **AI structured response**（`IntentClassification`）：
+  - `intent = ORDER_QUERY`
+  - `confidence = 0.95`
+  - `reasoning = "用户明确请求查询订单123456的详情，意图清晰属于订单查询类别"`
+  - `needs_clarification = false`（信息充足，不用追问）
+  - `clarification_question = None`
+
+### Trace 2 ——「它发货了吗?」（第二轮 · 多轮上下文追问物流）
+
+![LangSmith trace 第二轮](static/langsmith_2.png)
+
+**整体结构同样 `model → tools → model` 三步**，但这一轮最值得看的是 Input 区 —— 用户只说了「它发货了吗?」，**没有再次报订单号**：
+
+- **User input**：`它发货了吗?`
+- **AI tool call**：`logistics_handler`，`order_id = 123456` —— **`order_id` 是从上一轮历史消息里自动带过来的**
+- **Tool output**：`已路由到 logistics_handler (order_id=123456)`
+- **AI structured response**（`IntentClassification`）：
+  - `intent = LOGISTICS_DELIVERY`
+  - `confidence = 0.9`
+  - `reasoning = "用户基于上下文询问订单123456的发货状态，意图属于物流配送查询类别"`
+  - `needs_clarification = false`
+  - `slots = { order_id: 123456 }`（从 history 自动注入）
+
+这一轮是验证多轮对话最有说服力的证据 —— 用户用代词「它」指代上一轮的订单 123456，LangGraph 把完整 Messages history 喂给 LLM，LLM 自己从上下文里恢复了 `order_id` 并把意图从订单详情切到了物流配送。如果多轮上下文没接好，要么会问「哪个订单？」，要么会误判意图。
+
+### 在 LangSmith 上能看到的所有维度
+
+| 维度 | 状态 | 具体能看到的内容 |
+|---|---|---|
+| 每次 LangGraph 调用的输入 / 输出 | ✅ | User Message / AI Message / Tool Message 按时间线展开 |
+| 每个节点的耗时 + token 数 | ✅ | model / tools 分开计；token 数精确到 K |
+| 用户原始 query 与 LLM 路由决策 | ✅ | reasoning 字段原文保留 |
+| 多轮上下文累积 | ✅ | 第二轮 Input 区能看到完整 message history |
+| 模型版本 | ✅ | 截图里直接显示 `agnes-2.5-flash` |
+| 业务 API 调用明细（Tool 层） | ⏳ 后续 | 当前 handler 是 stub，接业务 API 后会出现在 tools 节点下 |
+
 ## 已验证的关键场景
 
 | 场景 | 用户输入 | 识别结果 | 路由 |
@@ -232,7 +289,7 @@ python main.py --query "我要退款" --stream
 
 - [ ] Tool Calling 层（订单查询 / 退款 / 物流 API 实际调用）
 - [ ] 多轮对话状态管理（user_id / session 持久化）
-- [ ] LangSmith trace 接入（生产可观测性）
+- [x] LangSmith trace 接入（生产可观测性） —— 详见「LangSmith 可观测性」章节
 - [ ] LangServe 部署（HTTP / SSE 流式）
 - [ ] RAG 增强（订单系统知识库召回）
 
