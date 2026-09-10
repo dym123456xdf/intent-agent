@@ -3,10 +3,10 @@ agent.models
 ============
 意图识别模块的 Pydantic schema。
 
-为什么用 Pydantic 而不是 TypedDict？
-- Pydantic 在 langchain 输出解析器（langchain_core.output_parsers.PydanticOutputParser）
-  里是一等公民，可以直接 .parse() + 注入到 prompt 做 format_instructions
-- TypedDict 是 LangGraph state 用的；这里要做 LLM 结构化输出校验，要用 Pydantic
+v2 改动（create_agent 范式）:
+- IntentClassification: 仍然是 LLM 的结构化输出 schema,通过 create_agent 的 response_format 传入
+- IntentCode / IntentSlot: 保留作为 schema 依赖
+- IntentDefinition / IntentRegistry: 保留,仍然从 data/intents.json 加载并用于构造 @tool
 """
 
 from typing import Literal
@@ -37,31 +37,34 @@ class IntentClassification(BaseModel):
     """
     单条用户消息的意图分类结果（LLM 输出的 schema）。
 
-    字段说明：
+    字段说明:
     - intent: 8 类意图之一
     - confidence: 模型对自己判断的置信度（0~1）
     - reasoning: 一句话解释为什么这样分类（用于 trace 调试）
     - slots: 从用户语句中抽取的关键参数（订单号、商品号等）
     - needs_clarification: 是否需要向用户追问（信息不足）
     - clarification_question: 需要追问的问题
+
+    在 create_agent 范式下，这个 schema 通过 response_format=IntentClassification 传入 agent；
+    agent 的最后一次输出会按此 schema 校验，最终结果在 result["structured_response"] 里。
     """
     intent: IntentCode = Field(description="识别出的意图编码（必须是 8 类之一）")
     confidence: float = Field(
         ge=0.0, le=1.0,
-        description="置信度，0~1，越接近 1 表示越确定"
+        description="置信度，0~1，越接近 1 表示越确定",
     )
     reasoning: str = Field(description="一句话解释为什么这样分类，便于 trace 调试")
     slots: list[IntentSlot] = Field(
         default_factory=list,
-        description="从用户语句中抽取的槽位（订单号、商品号等）"
+        description="从用户语句中抽取的槽位（订单号、商品号等）",
     )
     needs_clarification: bool = Field(
         default=False,
-        description="信息不足时是否需要追问用户"
+        description="信息不足时是否需要追问用户",
     )
     clarification_question: str | None = Field(
         default=None,
-        description="追问用户的问题（needs_clarification=True 时必填）"
+        description="追问用户的问题（needs_clarification=True 时必填）",
     )
 
 

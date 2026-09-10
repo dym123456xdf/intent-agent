@@ -1,13 +1,13 @@
 """
 main.py
 =======
-订单客服智能体 — 意图识别模块入口。
+订单客服智能体 — 意图识别模块入口（v2：create_agent 范式）。
 
 用法:
-    # 1. 单轮分类（最简）
+    # 1. 单轮分类
     python main.py --query "我的订单123456到哪了"
 
-    # 2. 交互式 REPL（演示）
+    # 2. 交互式 REPL
     python main.py --interactive
 
     # 3. 流式输出
@@ -23,26 +23,22 @@ import argparse
 import asyncio
 import json
 import logging
-import os
 import sys
 from pathlib import Path
 
-# 把项目根目录加到 sys.path（直接 python main.py 而非 python -m main）
 PROJECT_ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from dotenv import load_dotenv, find_dotenv
 
-# 让 .env 生效（保险起见 — 项目目前没 .env，但保留 hook）
 load_dotenv(find_dotenv(usecwd=True), override=False)
 
 from langchain_core.messages import HumanMessage
 
 from agent.config import LLM_MODEL
-from agent.state import AgentState
-from agent.workflow import get_compiled_graph
+from agent.result_extract import flatten_agent_result
+from agent.workflow import get_agent
 
-# —— 日志配置 ——
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -58,7 +54,8 @@ def _print_result(result: dict) -> None:
     print(f"💭 分类理由:     {result.get('intent_reasoning', '')}")
     slots = result.get("extracted_slots", {})
     if slots:
-        print(f"🔑 抽取槽位:     {json.dumps(slots, ensure_ascii=False)}")
+        slot_text = {k: v for k, v in slots.items()}
+        print(f"🔑 抽取槽位:     {json.dumps(slot_text, ensure_ascii=False)}")
     if result.get("needs_clarification"):
         print(f"❓ 需要追问:     {result.get('clarification_question')}")
     if result.get("fallback_reason"):
@@ -69,18 +66,15 @@ def _print_result(result: dict) -> None:
 
 async def classify_once(query: str) -> dict:
     """单轮意图识别"""
-    graph = get_compiled_graph()
-    initial_state: AgentState = {
-        "messages": [HumanMessage(content=query)],
-    }
-    result = await graph.ainvoke(initial_state)
-    return result
+    agent = get_agent()
+    result = await agent.ainvoke({"messages": [HumanMessage(content=query)]})
+    return flatten_agent_result(result)
 
 
 async def interactive_loop() -> None:
-    """交互式 REPL（演示用）"""
-    print(f"订单客服意图识别 Demo | 模型: {LLM_MODEL}")
-    print("输入用户问句，Enter 提交；输入 q / quit / 退出 结束\n")
+    """交互式 REPL"""
+    print(f"订单客服意图识别 Demo | 模型: {LLM_MODEL} (create_agent 范式)")
+    print("输入用户问句,Enter 提交;输入 q / quit / 退出 结束\n")
 
     while True:
         try:
@@ -93,7 +87,6 @@ async def interactive_loop() -> None:
         if query.lower() in {"q", "quit", "exit", "退出", "再见"}:
             print("再见 👋")
             return
-
         try:
             result = await classify_once(query)
             _print_result(result)
@@ -104,22 +97,19 @@ async def interactive_loop() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="订单客服意图识别 — LangGraph StateGraph (AGNES LLM)"
+        description="订单客服意图识别 — LangChain create_agent (AGNES LLM)"
     )
     parser.add_argument(
-        "--query", "-q",
-        type=str,
-        help="单条用户问句（与 --interactive 互斥）",
+        "--query", "-q", type=str,
+        help="单条用户问句(与 --interactive 互斥)",
     )
     parser.add_argument(
-        "--interactive", "-i",
-        action="store_true",
+        "--interactive", "-i", action="store_true",
         help="进入交互式 REPL",
     )
     parser.add_argument(
-        "--stream", "-s",
-        action="store_true",
-        help="流式输出（仅对 --query 生效）",
+        "--stream", "-s", action="store_true",
+        help="流式输出(仅对 --query 生效)",
     )
     args = parser.parse_args()
 
@@ -132,16 +122,18 @@ def main() -> None:
         sys.exit(1)
 
     if args.stream:
-        # 流式：打印每一步节点的状态
         async def _stream() -> None:
-            graph = get_compiled_graph()
-            initial_state: AgentState = {
-                "messages": [HumanMessage(content=args.query)],
-            }
-            async for event in graph.astream(initial_state):
+            agent = get_agent()
+            async for event in agent.astream(
+                {"messages": [HumanMessage(content=args.query)]},
+            ):
                 print(f"\n📡 节点事件: {list(event.keys())}")
                 for node_name, node_state in event.items():
-                    print(f"  └─ {node_name}: {json.dumps(node_state, ensure_ascii=False, indent=2)[:300]}...")
+                    preview = {
+                        k: str(v)[:200]
+                        for k, v in (node_state or {}).items()
+                    }
+                    print(f"  └─ {node_name}: {json.dumps(preview, ensure_ascii=False)[:300]}")
         asyncio.run(_stream())
     else:
         result = asyncio.run(classify_once(args.query))

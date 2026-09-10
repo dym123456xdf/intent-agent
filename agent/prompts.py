@@ -1,24 +1,18 @@
 """
 agent.prompts
 =============
-意图分类 prompt 模板。
+意图分类 system prompt + 意图清单加载。
 
-设计要点:
-1. **Few-shot 示例**:每个意图给 2-3 个典型问句，让 LLM 学到分类边界
-2. **结构化输出**:用 `ChatOpenAI.with_structured_output(IntentClassification)`
-   让 provider 在生成时按 schema 约束（function_calling / json_schema）。
-   不再需要 PydanticOutputParser + format_instructions 占位。
-3. **多轮对话**:注入 messages 历史，让 LLM 考虑上下文
-4. **低置信度策略**:prompt 鼓励 LLM 在模糊时输出 low confidence + needs_clarification
+v2 改动（create_agent 范式）:
+- 不再用 ChatPromptTemplate|from_messages（那是 LCEL chain 写法）
+- 改用纯 system_prompt 字符串，喂给 create_agent 的 system_prompt= 参数
+- 意图清单从 data/intents.json 加载后注入到 system prompt
 """
 
 import json
-from pathlib import Path
-
-from langchain_core.prompts import ChatPromptTemplate
 
 from agent.config import INTENTS_FILE
-from agent.models import IntentClassification, IntentRegistry
+from agent.models import IntentDefinition, IntentRegistry
 
 
 def load_intent_registry() -> IntentRegistry:
@@ -28,8 +22,8 @@ def load_intent_registry() -> IntentRegistry:
     return IntentRegistry.model_validate(data)
 
 
-# —— 意图清单字符串（注入 prompt） ——
 def _build_intent_list_text(registry: IntentRegistry) -> str:
+    """把意图清单格式化成可注入到 system prompt 的文本"""
     lines = []
     for intent in registry.intents:
         examples = " / ".join(intent.examples[:3])
@@ -40,14 +34,17 @@ def _build_intent_list_text(registry: IntentRegistry) -> str:
     return "\n".join(lines)
 
 
-# 启动时一次性构建 registry 文本（注入到 prompt 的 system message）
-_registry_text = _build_intent_list_text(load_intent_registry())
+# 启动时一次性构建 — registry 文本在 system prompt 里展开
+_registry = load_intent_registry()
+_INTENT_LIST_TEXT = _build_intent_list_text(_registry)
 
-INTENT_CLASSIFY_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", f"""你是订单系统在线客服的【意图识别引擎】。你的任务是：阅读用户当前的问句（以及多轮上下文），把它分类到下面 8 个意图之一，并抽取关键参数。
+
+# create_agent 范式下，system_prompt 是一个字符串；
+# @tool 装饰的 handler 各自带 docstring，所以 tool 选择靠 docstring + 这个 system_prompt 共同驱动
+SYSTEM_PROMPT = f"""你是订单系统在线客服的【意图识别与路由引擎】。
 
 【意图清单】
-{_registry_text}
+{_INTENT_LIST_TEXT}
 
 【分类原则】
 1. **核心语义**:看用户问句的**核心目的**是什么，不是看表面的词。
@@ -59,22 +56,17 @@ INTENT_CLASSIFY_PROMPT = ChatPromptTemplate.from_messages([
    - "我想退货，订单号是123456" → 退款售后（REFUND_AFTER_SALE），同时抽取 order_id=123456。
 2. **优先级冲突时的取舍**:
    - "投诉 + 具体业务" → 投诉建议（COMPLAINT_SUGGESTION）。投诉意图盖过具体业务意图。
-   - "订单号缺失 + 问订单状态" → 标记 needs_clarification=true，问用户要订单号。
+   - "订单号缺失 + 问订单状态" → 调 `clarification_handler` tool，向用户追问订单号。
 3. **置信度规则**:
    - 高置信: 0.85~1.0 — 句式典型、意图明确。
    - 中置信: 0.6~0.85 — 有一定模糊性但可推断。
-   - 低置信: 0.0~0.6 — 模糊或边界场景，必须 needs_clarification=true 或置信度低。
-4. **闲聊处理**:打招呼/闲聊/与订单无关的问题 → CHITCHAT_GREETING。
+   - 低置信: 0.0~0.6 — 模糊或边界场景，必须调 `clarification_handler` 或 `fallback_handler` tool。
+4. **闲聊处理**:打招呼/闲聊/与订单无关的问题 → 调 `chitchat_handler` tool。
 5. **槽位抽取**:如果用户提到订单号、商品号等具体 ID，必须抽取到 slots 字段。
-6. **追问策略**:信息缺失（如查询订单但没给订单号）时，必须 needs_clarification=true 并写出追问问题。
+6. **未知意图**:如果用户问句不属于上面 8 类中的任何一类，调 `fallback_handler` tool，不要硬猜。
+7. **绝不允许脑补参数**:如果用户问句里**没有**显式给出订单号/商品号等 ID（例如"我的订单到哪了"、"查一下我的订单"），即使主语里有"订单"两字，也**不要**把"我的订单"等当作 order_id 传入 handler——必须先调 `clarification_handler` 向用户追问。这是硬规则。
 
-严格按 IntentClassification schema 输出 JSON — 不要加多余字段，不要省略字段。
-"""),
-    # 注入多轮对话历史（占位 {messages} 由 LangGraph 自动填）
-    ("placeholder", "{messages}"),
-])
-
-
-def get_intent_classify_prompt() -> ChatPromptTemplate:
-    """暴露给外部的 prompt getter — 测试时可以 monkeypatch"""
-    return INTENT_CLASSIFY_PROMPT
+【输出要求】
+- 最终一轮按 IntentClassification schema 输出 JSON：包含 intent/confidence/reasoning/slots/needs_clarification/clarification_question 字段。
+- 不要省略字段，不要加多余字段。
+"""

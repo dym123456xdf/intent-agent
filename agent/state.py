@@ -1,54 +1,36 @@
 """
 agent.state
 ============
-LangGraph StateGraph 的 state schema。
+v2 改造（create_agent 范式）下，state 不再由我们自己维护 — create_agent 内部用 LangGraph 跑
+一个固定的 ReAct loop（model ↔ tools），state schema 是 LangChain 内置的 AgentState。
 
-主流写法（LangGraph 1.x 官方推荐）:
-- 继承 langgraph.graph.MessagesState —— 它已经声明了 `messages: Annotated[list, add_messages]`
-  字段（带 add_messages reducer 的 messages 列表），我们只需要叠加业务字段即可
-- 不需要再手动 import add_messages / 写 Annotated[list, add_messages]
+本文件保留一份 AgentResult TypedDict，用于在 main.py / tests 里接收 agent 输出：
+result["messages"]: list[BaseMessage] — 全程对话历史（含 tool calls）
+result["structured_response"]: IntentClassification — 最后一次按 schema 校验的结构化输出
 
-字段说明:
-- messages: 用户-客服的多轮对话（继承自 MessagesState，已带 add_messages reducer;
-  LangGraph 自带的基于 id 去重 + 新消息覆盖旧消息的合并器，多轮场景必需）
-- current_intent: 本轮分类出的意图（每轮 overwrite）
-- intent_confidence: 当前意图的置信度
-- intent_reasoning: 分类理由（便于 trace）
-- extracted_slots: 抽取出的槽位（dict[str, str]）
-- needs_clarification: 是否需要追问
-- clarification_question: 追问的问题
-- routed_node: 经 confidence 校验 + 路由函数后，下一步要去的目标节点名
-- fallback_reason: 触发 fallback 的原因（None / "low_confidence" / "unknown_intent"）
+字段说明：
+- routed_node: 从 agent 的 tool calls 推断出来的最终去向 handler 名（主入口用）
+- fallback_reason: 如果 routed_node 是 fallback_handler，触发原因
+- intent / confidence / slots ... : 从 structured_response 里平铺出来，UI 层直接读
 """
 
-from typing import NotRequired
-
-from langgraph.graph import MessagesState
+from typing import NotRequired, TypedDict
 
 
-class AgentState(MessagesState):
-    """
-    业务 state 继承 LangGraph 官方的 MessagesState:
-    - 自动获得 messages 字段（Annotated[list[AnyMessage], add_messages]）
-    - 少 4 行 boilerplate（不用 import add_messages / 不用 Annotated[...]）
-    - 与 LangSmith / LangGraph 官方示例对齐
-    """
-    # —— 意图分类节点写入 ——
-    # 8 类意图之一
-    current_intent: NotRequired[str]
-    # 置信度（0~1）
-    intent_confidence: NotRequired[float]
-    # 一句话分类理由（trace 调试）
-    intent_reasoning: NotRequired[str]
-    # 抽取出的槽位 { "order_id": "123456", "product_id": "P001" }
-    extracted_slots: NotRequired[dict[str, str]]
-    # 是否需要追问
-    needs_clarification: NotRequired[bool]
-    # 追问用户的问题
-    clarification_question: NotRequired[str]
+class AgentResult(TypedDict):
+    """create_agent.invoke() 返回值的扁平化视图（main.py 用）"""
+    # agent 的原始输出
+    messages: list  # 全程对话历史
+    structured_response: NotRequired[dict]  # IntentClassification 转 dict 后的视图（可能缺失）
 
-    # —— 路由节点写入 ——
-    # 路由决策：下一步要去的目标节点名（"order_query_handler" / "fallback_handler" 等）
-    routed_node: NotRequired[str]
-    # 触发 fallback 的原因（None / "low_confidence" / "unknown_intent"）
+    # 推断字段（main.py 从 tool_calls 提取）
+    routed_node: NotRequired[str]  # 最后调用的 tool 名
     fallback_reason: NotRequired[str | None]
+
+    # 平铺字段（main.py 从 structured_response 提取）
+    current_intent: NotRequired[str]
+    intent_confidence: NotRequired[float]
+    intent_reasoning: NotRequired[str]
+    extracted_slots: NotRequired[dict[str, str]]
+    needs_clarification: NotRequired[bool]
+    clarification_question: NotRequired[str | None]
